@@ -274,6 +274,7 @@ class SequenceGenerator(object):
             lprobs, avg_attn_scores = model.forward_decoder(
                 tokens[:, :step + 1], encoder_outs, temperature=self.temperature,
             )
+            lprobs[lprobs != lprobs] = -math.inf
 
             lprobs[:, self.pad] = -math.inf  # never select pad
             lprobs[:, self.unk] -= self.unk_penalty  # apply unk penalty
@@ -325,6 +326,8 @@ class SequenceGenerator(object):
                                 gen_ngrams[bbsz_idx].get(tuple(ngram[:-1]), []) + [ngram[-1]]
 
             # Record attention scores
+            if type(avg_attn_scores) is list:
+                avg_attn_scores = avg_attn_scores[0]
             if avg_attn_scores is not None:
                 if attn is None:
                     attn = scores.new(bsz * beam_size, src_tokens.size(1), max_len + 2)
@@ -506,7 +509,7 @@ class EnsembleModel(torch.nn.Module):
         super().__init__()
         self.models = torch.nn.ModuleList(models)
         self.incremental_states = None
-        if all(isinstance(m.decoder, FairseqIncrementalDecoder) for m in models):
+        if all(hasattr(m, 'decoder') and isinstance(m.decoder, FairseqIncrementalDecoder) for m in models):
             self.incremental_states = {m: {} for m in models}
 
     def has_encoder(self):
@@ -571,6 +574,8 @@ class EnsembleModel(torch.nn.Module):
         attn = decoder_out[1]
         if type(attn) is dict:
             attn = attn.get('attn', None)
+        if type(attn) is list:
+            attn = attn[0]
         if attn is not None:
             attn = attn[:, -1, :]
         probs = model.get_normalized_probs(decoder_out, log_probs=log_probs)
@@ -686,6 +691,8 @@ class EnsembleModelWithAlignment(EnsembleModel):
         attn = decoder_out[1]
         if type(attn) is dict:
             attn = attn.get('attn', None)
+        if type(attn) is list:
+            attn = attn[0]
         if attn is not None:
             attn = attn[:, -1, :]
         probs = model.get_normalized_probs(decoder_out, log_probs=log_probs)
