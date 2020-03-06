@@ -92,11 +92,10 @@ for l in $src $tgt; do
         cat $orig/$f.$l | \
             perl $NORM_PUNC $l | \
             perl $REM_NON_PRINT_CHAR | \
-            perl $TOKENIZER -threads 8 -a -l $l >> $tmp/train.tags.$lang.tok.$l
+            perl $TOKENIZER -threads 32 -a -l $l >> $tmp/train.tags.$lang.tok.$l
     done
 done
 
-# TODO: is dev meant to be used as test data?
 echo "pre-processing test data..."
 for l in $src $tgt; do
     if [ "$l" == "$src" ]; then
@@ -107,7 +106,7 @@ for l in $src $tgt; do
     cat $orig/$dev.$l | \
         perl $NORM_PUNC $l | \
         perl $REM_NON_PRINT_CHAR | \
-        perl $TOKENIZER -threads 8 -a -l $l >> $tmp/test.$l
+        perl $TOKENIZER -threads 32 -a -l $l >> $tmp/test.$l
     echo ""
 done
 
