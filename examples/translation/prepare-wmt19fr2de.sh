@@ -24,6 +24,7 @@ URLS=(
     "http://data.statmt.org/wmt19/translation-task/fr-de/bitexts/de-fr.bicleaner07.fr.gz"
     "http://data.statmt.org/wmt19/translation-task/fr-de/bitexts/dev08_14.de.gz"
     "http://data.statmt.org/wmt19/translation-task/fr-de/bitexts/dev08_14.fr.gz"
+    "http://data.statmt.org/wmt19/translation-task/test.tgz"
 )
 FILES=(
     "europarl-v7.de.gz"
@@ -34,14 +35,16 @@ FILES=(
     "de-fr.bicleaner07.fr.gz"
     "dev08_14.de.gz"
     "dev08_14.fr.gz"
+    "test.tgz"
 )
 CORPORA=(
     "europarl-v7"
     "commoncrawl"
     "de-fr.bicleaner07"
+    "dev08_14"
 )
 
-OUTDIR=wmt19_de_fr
+OUTDIR=wmt19_fr_de
 
 if [ ! -d "$SCRIPTS" ]; then
     echo "Please set SCRIPTS variable correctly to point to Moses scripts."
@@ -54,7 +57,6 @@ lang=fr-de
 prep=$OUTDIR
 tmp=$prep/tmp
 orig=orig
-dev=dev08_14
 
 mkdir -p $orig $tmp $prep
 
@@ -103,10 +105,11 @@ for l in $src $tgt; do
     else
         t="ref"
     fi
-    cat $orig/$dev.$l | \
-        perl $NORM_PUNC $l | \
-        perl $REM_NON_PRINT_CHAR | \
-        perl $TOKENIZER -threads 32 -a -l $l >> $tmp/test.$l
+    grep '<seg id' $orig/test/sgm/newstest2019-frde-$t.$l.sgm | \
+        sed -e 's/<seg id="[0-9]*">\s*//g' | \
+        sed -e 's/\s*<\/seg>\s*//g' | \
+        sed -e "s/\’/\'/g" | \
+    perl $TOKENIZER -threads 32 -a -l $l > $tmp/test.$l
     echo ""
 done
 
