@@ -44,16 +44,16 @@ CORPORA=(
     "dev08_14"
 )
 
-OUTDIR=wmt19_fr_de
+OUTDIR=wmt19_de_fr
 
 if [ ! -d "$SCRIPTS" ]; then
     echo "Please set SCRIPTS variable correctly to point to Moses scripts."
     exit
 fi
 
-src=fr
-tgt=de
-lang=fr-de
+src=de
+tgt=fr
+lang=de-fr
 prep=$OUTDIR
 tmp=$prep/tmp
 orig=orig
@@ -105,7 +105,7 @@ for l in $src $tgt; do
     else
         t="ref"
     fi
-    grep '<seg id' $orig/sgm/newstest2019-frde-$t.$l.sgm | \
+    grep '<seg id' $orig/sgm/newstest2019-defre-$t.$l.sgm | \
         sed -e 's/<seg id="[0-9]*">\s*//g' | \
         sed -e 's/\s*<\/seg>\s*//g' | \
         sed -e "s/\’/\'/g" | \
@@ -119,7 +119,7 @@ for l in $src $tgt; do
     awk '{if (NR%100 != 0)  print $0; }' $tmp/train.tags.$lang.tok.$l > $tmp/train.$l
 done
 
-TRAIN=$tmp/train.fr-de
+TRAIN=$tmp/train.de-fre
 BPE_CODE=$prep/code
 rm -f $TRAIN
 for l in $src $tgt; do
