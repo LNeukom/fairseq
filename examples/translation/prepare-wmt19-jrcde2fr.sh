@@ -14,6 +14,7 @@ NORM_PUNC=$SCRIPTS/tokenizer/normalize-punctuation.perl
 REM_NON_PRINT_CHAR=$SCRIPTS/tokenizer/remove-non-printing-char.perl
 BPEROOT=subword-nmt/subword_nmt
 BPE_TOKENS=40000
+jrc_train_split="1m"
 
 URLS=(
     "http://data.statmt.org/wmt19/translation-task/fr-de/bitexts/europarl-v7.de.gz"
@@ -24,9 +25,10 @@ URLS=(
     "http://data.statmt.org/wmt19/translation-task/fr-de/bitexts/de-fr.bicleaner07.fr.gz"
     "http://data.statmt.org/wmt19/translation-task/fr-de/bitexts/dev08_14.de.gz"
     "http://data.statmt.org/wmt19/translation-task/fr-de/bitexts/dev08_14.fr.gz"
-    "https://drive.switch.ch/index.php/s/RZaDM7aUSUhLSKn/download"  # jrc.de.gz
-    "https://drive.switch.ch/index.php/s/ccRILjlp7LDeFTK/download"  # jrc.fr.gz
-    "http://data.statmt.org/wmt19/translation-task/test.tgz"
+    "https://drive.switch.ch/index.php/s/snHrsUmVizOXuKh/download?path=%2F&files=jrc.train${jrc_train_split}.de.gz"
+    "https://drive.switch.ch/index.php/s/snHrsUmVizOXuKh/download?path=%2F&files=jrc.train${jrc_train_split}.fr.gz"
+    "https://drive.switch.ch/index.php/s/snHrsUmVizOXuKh/download?path=%2F&files=jrc.test.de.gz"
+    "https://drive.switch.ch/index.php/s/snHrsUmVizOXuKh/download?path=%2F&files=jrc.test.fr.gz"
 )
 FILES=(
     "europarl-v7.de.gz"
@@ -37,18 +39,20 @@ FILES=(
     "de-fr.bicleaner07.fr.gz"
     "dev08_14.de.gz"
     "dev08_14.fr.gz"
-    "jrc.de.gz"
-    "jrc.fr.gz"
-    "test.tgz"
+    "jrc.train${jrc_train_split}.de.gz"
+    "jrc.train${jrc_train_split}.fr.gz"
+    "jrc.test.de.gz"
+    "jrc.test.fr.gz"
 )
 CORPORA=(
     "europarl-v7"
     "commoncrawl"
     "de-fr.bicleaner07"
     "dev08_14"
+    "jrc.train${jrc_train_split}"
 )
 
-OUTDIR=wmt19_jrc_de_fr
+OUTDIR=wmt19_jrc_${jrc_train_split}_de_fr
 
 if [ ! -d "$SCRIPTS" ]; then
     echo "Please set SCRIPTS variable correctly to point to Moses scripts."
@@ -72,7 +76,7 @@ for ((i=0;i<${#URLS[@]};++i)); do
         echo "$file already exists, skipping download"
     else
         url=${URLS[i]}
-        wget "$url"
+        wget -O $file "$url"
         if [ -f $file ]; then
             echo "$url successfully downloaded."
         else
@@ -104,16 +108,10 @@ done
 
 echo "pre-processing test data..."
 for l in $src $tgt; do
-    if [ "$l" == "$src" ]; then
-        t="src"
-    else
-        t="ref"
-    fi
-    grep '<seg id' $orig/sgm/newstest2019-defr-$t.$l.sgm | \
-        sed -e 's/<seg id="[0-9]*">\s*//g' | \
-        sed -e 's/\s*<\/seg>\s*//g' | \
-        sed -e "s/\’/\'/g" | \
-    perl $TOKENIZER -threads 32 -a -l $l > $tmp/test.$l
+    cat $orig/jrc.test.$l | \
+        perl $NORM_PUNC $l | \
+        perl $REM_NON_PRINT_CHAR | \
+        perl $TOKENIZER -threads 32 -a -l $l > $tmp/test.$l
     echo ""
 done
 
@@ -123,7 +121,7 @@ for l in $src $tgt; do
     awk '{if (NR%100 != 0)  print $0; }' $tmp/train.tags.$lang.tok.$l > $tmp/train.$l
 done
 
-TRAIN=$tmp/train.de-fre
+TRAIN=$tmp/train.de-fr
 BPE_CODE=$prep/code
 rm -f $TRAIN
 for l in $src $tgt; do
