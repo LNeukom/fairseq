@@ -14,7 +14,7 @@ NORM_PUNC=$SCRIPTS/tokenizer/normalize-punctuation.perl
 REM_NON_PRINT_CHAR=$SCRIPTS/tokenizer/remove-non-printing-char.perl
 BPEROOT=subword-nmt/subword_nmt
 BPE_TOKENS=40000
-jrc_train_split="1m"
+jrc_train_split="10k"  # 10k, 100k, 1m
 
 URLS=(
     "http://data.statmt.org/wmt19/translation-task/fr-de/bitexts/europarl-v7.de.gz"
