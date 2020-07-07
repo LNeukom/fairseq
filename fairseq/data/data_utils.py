@@ -38,8 +38,11 @@ def collate_tokens(values, pad_idx, eos_idx=None, left_pad=False, move_eos_to_be
     def copy_tensor(src, dst):
         assert dst.numel() == src.numel()
         if move_eos_to_beginning:
-            assert src[-1] == eos_idx
-            dst[0] = eos_idx
+            if eos_idx is None:
+                # if no eos_idx is specified, then use the last token in src
+                dst[0] = src[-1]
+            else:
+                dst[0] = eos_idx
             dst[1:] = src[:-1]
         else:
             dst.copy_(src)
@@ -191,7 +194,7 @@ def filter_by_size(indices, dataset, max_positions, raise_exception=False):
             'skip this example with --skip-invalid-size-inputs-valid-test'
         ).format(ignored[0], dataset.size(ignored[0]), max_positions))
     if len(ignored) > 0:
-        logger.warn((
+        logger.warning((
             '{} samples have invalid sizes and will be skipped, '
             'max_positions={}, first few sample ids={}'
         ).format(len(ignored), max_positions, ignored[:10]))
@@ -200,7 +203,7 @@ def filter_by_size(indices, dataset, max_positions, raise_exception=False):
 
 def batch_by_size(
     indices, num_tokens_fn, max_tokens=None, max_sentences=None,
-    required_batch_size_multiple=1,
+    required_batch_size_multiple=1, fixed_shapes=None,
 ):
     """
     Yield mini-batches of indices bucketed by size. Batches may contain
@@ -215,10 +218,15 @@ def batch_by_size(
         max_sentences (int, optional): max number of sentences in each
             batch (default: None).
         required_batch_size_multiple (int, optional): require batch size to
-            be a multiple of N (default: 1).
+            be less than N or a multiple of N (default: 1).
+        fixed_shapes (List[Tuple[int, int]], optional): if given, batches will
+            only be created with the given shapes. *max_sentences* and
+            *required_batch_size_multiple* will be ignored (default: None).
     """
     try:
-        from fairseq.data.data_utils_fast import batch_by_size_fast
+        from fairseq.data.data_utils_fast import (
+            batch_by_size_fast, batch_fixed_shapes_fast,
+        )
     except ImportError:
         raise ImportError(
             'Please build Cython components with: `pip install --editable .` '
@@ -229,10 +237,21 @@ def batch_by_size(
     max_sentences = max_sentences if max_sentences is not None else -1
     bsz_mult = required_batch_size_multiple
 
-    if isinstance(indices, types.GeneratorType):
+    if not isinstance(indices, np.ndarray):
         indices = np.fromiter(indices, dtype=np.int64, count=-1)
 
-    return batch_by_size_fast(indices, num_tokens_fn, max_tokens, max_sentences, bsz_mult)
+    if fixed_shapes is None:
+        return batch_by_size_fast(
+            indices, num_tokens_fn, max_tokens, max_sentences, bsz_mult,
+        )
+    else:
+        fixed_shapes = np.array(fixed_shapes, dtype=np.int64)
+        sort_order = np.lexsort([
+            fixed_shapes[:, 1].argsort(),  # length
+            fixed_shapes[:, 0].argsort(),  # bsz
+        ])
+        fixed_shapes_sorted = fixed_shapes[sort_order]
+        return batch_fixed_shapes_fast(indices, num_tokens_fn, fixed_shapes_sorted)
 
 
 def process_bpe_symbol(sentence: str, bpe_symbol: str):

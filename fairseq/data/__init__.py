@@ -12,6 +12,7 @@ from .base_wrapper_dataset import BaseWrapperDataset
 from .append_token_dataset import AppendTokenDataset
 from .audio.raw_audio_dataset import FileAudioDataset
 from .backtranslation_dataset import BacktranslationDataset
+from .bucket_pad_length_dataset import BucketPadLengthDataset
 from .colorize_dataset import ColorizeDataset
 from .concat_dataset import ConcatDataset
 from .concat_sentences_dataset import ConcatSentencesDataset
@@ -38,14 +39,13 @@ from .replace_dataset import ReplaceDataset
 from .resampling_dataset import ResamplingDataset
 from .roll_dataset import RollDataset
 from .round_robin_zip_datasets import RoundRobinZipDatasets
-from .sharded_dataset import ShardedDataset
 from .sort_dataset import SortDataset
 from .strip_token_dataset import StripTokenDataset
 from .subsample_dataset import SubsampleDataset
 from .token_block_dataset import TokenBlockDataset
 from .transform_eos_dataset import TransformEosDataset
 from .transform_eos_lang_pair_dataset import TransformEosLangPairDataset
-from .truncate_dataset import TruncateDataset
+from .shorten_dataset import TruncateDataset, RandomCropDataset
 
 from .iterators import (
     CountingIterator,
@@ -58,6 +58,7 @@ __all__ = [
     'AppendTokenDataset',
     'BacktranslationDataset',
     'BaseWrapperDataset',
+    'BucketPadLengthDataset',
     'ColorizeDataset',
     'ConcatDataset',
     'ConcatSentencesDataset',
@@ -96,7 +97,6 @@ __all__ = [
     'ResamplingDataset',
     'RightPadDataset',
     'RoundRobinZipDatasets',
-    'ShardedDataset',
     'ShardedIterator',
     'SortDataset',
     'StripTokenDataset',

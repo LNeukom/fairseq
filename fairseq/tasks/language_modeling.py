@@ -11,6 +11,7 @@ import torch
 
 from fairseq import utils
 from fairseq.data import (
+    AppendTokenDataset,
     data_utils,
     Dictionary,
     IdDataset,
@@ -22,9 +23,9 @@ from fairseq.data import (
     StripTokenDataset,
     TokenBlockDataset,
     TransformEosDataset,
-    TruncateDataset,
     TruncatedDictionary,
 )
+from fairseq.data.shorten_dataset import maybe_shorten_dataset
 from fairseq.tasks import FairseqTask, register_task
 
 
@@ -87,8 +88,12 @@ class LanguageModelingTask(FairseqTask):
                             help='prepend beginning of sentence token (<s>)')
         parser.add_argument('--max-target-positions', type=int, metavar='N',
                             help='max number of tokens in the target sequence')
-        parser.add_argument('--truncate-sequence', action='store_true', default=False,
-                            help='truncate sequences to --tokens-per-sample')
+        parser.add_argument('--shorten-method', default='none',
+                            choices=['none', 'truncate', 'random_crop'],
+                            help='if not none, shorten sequences that exceed --tokens-per-sample')
+        parser.add_argument('--shorten-data-split-list', default='',
+                            help='comma-separated list of dataset splits to apply shortening to, '
+                                 'e.g., "train,valid" (default: all dataset splits)')
         # fmt: on
 
     def __init__(self, args, dictionary, output_dictionary=None, targets=None):
@@ -110,7 +115,7 @@ class LanguageModelingTask(FairseqTask):
         dictionary = None
         output_dictionary = None
         if args.data:
-            paths = args.data.split(os.pathsep)
+            paths = utils.split_paths(args.data)
             assert len(paths) > 0
             dictionary = Dictionary.load(os.path.join(paths[0], "dict.txt"))
             logger.info("dictionary: {} types".format(len(dictionary)))
@@ -148,16 +153,16 @@ class LanguageModelingTask(FairseqTask):
 
         return model
 
-    def load_dataset(self, split, epoch=0, combine=False, **kwargs):
+    def load_dataset(self, split, epoch=1, combine=False, **kwargs):
         """Load a given dataset split.
 
         Args:
             split (str): name of the split (e.g., train, valid, test)
         """
-        paths = self.args.data.split(os.pathsep)
+        paths = utils.split_paths(self.args.data)
         assert len(paths) > 0
 
-        data_path = paths[epoch % len(paths)]
+        data_path = paths[(epoch - 1) % len(paths)]
         split_path = os.path.join(data_path, split)
 
         dataset = data_utils.load_indexed_dataset(
@@ -168,8 +173,14 @@ class LanguageModelingTask(FairseqTask):
                 "Dataset not found: {} ({})".format(split, split_path)
             )
 
-        if self.args.truncate_sequence:
-            dataset = TruncateDataset(dataset, self.args.tokens_per_sample)
+        dataset = maybe_shorten_dataset(
+            dataset,
+            split,
+            self.args.shorten_data_split_list,
+            self.args.shorten_method,
+            self.args.tokens_per_sample,
+            self.args.seed,
+        )
 
         dataset = TokenBlockDataset(
             dataset,
@@ -200,28 +211,32 @@ class LanguageModelingTask(FairseqTask):
     def build_dataset_for_inference(self, src_tokens, src_lengths, **kwargs):
         """
         Generate batches for inference. We prepend an eos token to src_tokens
-        (or bos if `--add-bos-token` is set) and we append an eos to target.
+        (or bos if `--add-bos-token` is set) and we append a <pad> to target.
         This is convenient both for generation with a prefix and LM scoring.
         """
-        tgt_dataset = TokenBlockDataset(
-            src_tokens,
-            src_lengths,
-            block_size=None,  # ignored for "eos" break mode
-            pad=self.source_dictionary.pad(),
-            eos=self.source_dictionary.eos(),
-            break_mode="eos",
+        dataset = StripTokenDataset(
+            TokenBlockDataset(
+                src_tokens,
+                src_lengths,
+                block_size=None,  # ignored for "eos" break mode
+                pad=self.source_dictionary.pad(),
+                eos=self.source_dictionary.eos(),
+                break_mode="eos",
+            ),
+            # remove eos from (end of) target sequence
+            self.source_dictionary.eos(),
         )
         src_dataset = PrependTokenDataset(
-            StripTokenDataset(
-                tgt_dataset,
-                # remove eos from (end of) target sequence
-                self.source_dictionary.eos(),
-            ),
+            dataset,
             token=(
                 self.source_dictionary.bos()
                 if getattr(self.args, "add_bos_token", False)
                 else self.source_dictionary.eos()
             ),
+        )
+        tgt_dataset = AppendTokenDataset(
+            dataset,
+            token=self.source_dictionary.pad()
         )
         return NestedDictionaryDataset(
             {

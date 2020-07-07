@@ -23,7 +23,7 @@ from fairseq.sequence_generator import SequenceGenerator
 
 from .multilingual_translation import MultilingualTranslationTask
 from . import register_task
-
+from fairseq import utils
 
 logger = logging.getLogger(__name__)
 
@@ -136,12 +136,11 @@ class SemisupervisedTranslationTask(MultilingualTranslationTask):
         dicts, training = MultilingualTranslationTask.prepare(args, **kwargs)
         return cls(args, dicts, training)
 
-    def load_dataset(self, split, epoch=0, **kwargs):
+    def load_dataset(self, split, epoch=1, **kwargs):
         """Load a dataset split."""
-
-        paths = self.args.data.split(os.pathsep)
+        paths = utils.split_paths(self.args.data)
         assert len(paths) > 0
-        data_path = paths[epoch % len(paths)]
+        data_path = paths[(epoch - 1) % len(paths)]
 
         def split_exists(split, src, tgt, lang):
             if src is not None:
@@ -265,8 +264,6 @@ class SemisupervisedTranslationTask(MultilingualTranslationTask):
                     tgt_dataset, tgt_dataset.sizes, self.dicts[tgt],
                     left_pad_source=self.args.left_pad_source,
                     left_pad_target=self.args.left_pad_target,
-                    max_source_positions=self.args.max_source_positions,
-                    max_target_positions=self.args.max_target_positions,
                 ),
                 self.dicts[src].eos(),
                 src,
@@ -301,6 +298,7 @@ class SemisupervisedTranslationTask(MultilingualTranslationTask):
                 src, tgt = lang_pair.split('-')
                 key = '{}-{}'.format(tgt, src)
                 self.sequence_generators[key] = SequenceGenerator(
+                    [model.models[key]],
                     tgt_dict=self.dicts[src],
                     beam_size=args.bt_beam_size,
                     max_len_a=args.bt_max_len_a,
@@ -322,8 +320,12 @@ class SemisupervisedTranslationTask(MultilingualTranslationTask):
 
         return model
 
-    def train_step(self, sample, model, criterion, optimizer, ignore_grad=False):
+    def train_step(self, sample, model, criterion, optimizer, update_num, ignore_grad=False):
         model.train()
+
+        if update_num > 0:
+            self.update_step(update_num)
+
         agg_loss, agg_sample_size, agg_logging_output = 0., 0., {}
 
         def forward_backward(model, samples, logging_output_key, weight):
@@ -339,7 +341,9 @@ class SemisupervisedTranslationTask(MultilingualTranslationTask):
             agg_loss += loss.detach().item()
             # TODO make summing of the sample sizes configurable
             agg_sample_size += sample_size
-            agg_logging_output[logging_output_key] = logging_output
+            for k in logging_output:
+                agg_logging_output[k] += logging_output[k]
+                agg_logging_output[logging_output_key] += logging_output[k]
 
         if self.lambda_parallel > 0.0:
             for lang_pair in self.lang_pairs:
@@ -379,20 +383,3 @@ class SemisupervisedTranslationTask(MultilingualTranslationTask):
             self.lambda_denoising = lambda_step_func(self.lambda_denoising_steps, num_updates)
         if self.lambda_otf_bt_steps is not None:
             self.lambda_otf_bt = lambda_step_func(self.lambda_otf_bt_steps, num_updates)
-
-    def aggregate_logging_outputs(self, logging_outputs, criterion):
-        # aggregate logging outputs for each language pair
-        logging_output_keys = {
-            key
-            for logging_output in logging_outputs
-            for key in logging_output
-        }
-        lang_pair_keys = set(self.lang_pairs + [
-            _get_bt_dataset_key(lang_pair)
-            for lang_pair in self.lang_pairs
-        ] + [
-            _get_denoising_dataset_key(lang_pair)
-            for lang_pair in self.lang_pairs
-        ])
-        logging_output_keys = logging_output_keys.intersection(lang_pair_keys)
-        return super().aggregate_logging_outputs(logging_outputs, criterion, logging_output_keys)
