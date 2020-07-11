@@ -21,6 +21,8 @@ def get_parser():
                         help='percentage of data to use as validation set (between 0 and 1)')
     parser.add_argument('--dest', default='.', type=str, metavar='DIR', help='output directory')
     parser.add_argument('--ext', default='flac', type=str, metavar='EXT', help='extension to look for')
+    parser.add_argument('--min-duration', default=10., type=float, metavar='D', help='min audio duration')
+    parser.add_argument('--max-duration', default=40., type=float, metavar='D', help='max audio duration')
     parser.add_argument('--seed', default=42, type=int, metavar='N', help='random seed')
     parser.add_argument('--path-must-contain', default=None, type=str, metavar='FRAG',
                         help='if set, path must contain this substring for a file to be included in the manifest')
@@ -43,11 +45,21 @@ def main(args):
             file_path = os.path.realpath(fname)
 
             if args.path_must_contain and args.path_must_contain not in file_path:
+                print(f"Ignore {fname}: path does not contain {args.path_must_contain}")
                 continue
 
-            frames = soundfile.info(fname).frames
+            file_info = soundfile.info(fname)
+
+            if file_path.duration < args.min_duration:
+                print(f"Ignore {fname}: duration {file_path.duration:.2f} < min_duration {args.min_duration:.2f}")
+                continue
+
+            if file_path.duration > args.max_duration:
+                print(f"Ignore {fname}: duration {file_path.duration:.2f} > max_duration {args.max_duration:.2f}")
+                continue
+
             dest = train_f if rand.random() > args.valid_percent else valid_f
-            print('{}\t{}'.format(os.path.relpath(file_path, dir_path), frames), file=dest)
+            print('{}\t{}'.format(os.path.relpath(file_path, dir_path), file_info.frames), file=dest)
 
 
 if __name__ == '__main__':
