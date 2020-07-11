@@ -26,11 +26,15 @@ def main(args):
         if not os.path.exists(dst_file_path):
             try:
                 process = subprocess.Popen(
-                    f"ffmpeg -hide_banner -loglevel warning -y -i {src_file_path} {dst_file_path}",
-                    shell=True, stdout=subprocess.PIPE)
+                    f"ffmpeg -hide_banner -loglevel panic -y -i {src_file_path} {dst_file_path}",
+                    shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                output, error = process.communicate()
                 process.wait()
+                if process.returncode != 0:
+                    print(f"Failed to convert {src_file_path} to {dst_file_path}: {process.returncode:d} {output} "
+                          f"{error}")
             except Exception as e:
-                print(f"Failed to convert {src_file_path} to {dst_file_path}.")
+                print(f"Failed to convert {src_file_path} to {dst_file_path}: {e}")
 
 
 if __name__ == '__main__':
