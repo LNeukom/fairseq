@@ -1,5 +1,6 @@
 import argparse
 import glob
+import multiprocessing
 import os
 import subprocess
 
@@ -14,27 +15,34 @@ def get_parser():
     return parser
 
 
+def convert_audio(sr_path, dst_path):
+    if not os.path.exists(dst_path):
+        try:
+            process = subprocess.Popen(f"ffmpeg -hide_banner -loglevel panic -y -i {sr_path} {dst_path}",
+                                       shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            output, error = process.communicate()
+            process.wait()
+            if process.returncode != 0:
+                print(f"Failed to convert {sr_path} to {dst_path}: {process.returncode:d} {output} {error}")
+        except Exception as e:
+            print(f"Failed to convert {sr_path} to {dst_path}: {e}")
+    return dst_path
+
+
 def main(args):
     dir_path = os.path.realpath(args.root)
     search_path = os.path.join(dir_path, '**/*.' + args.src_ext)
+    src_paths = glob.glob(search_path, recursive=True)
 
-    for src_fname in tqdm(glob.glob(search_path, recursive=True)):
-        src_file_path = os.path.realpath(src_fname)
-        dst_fname = src_fname.replace(args.src_ext, args.dst_ext)
-        dst_file_path = os.path.realpath(dst_fname)
+    progress_bar = tqdm(total=100)
 
-        if not os.path.exists(dst_file_path):
-            try:
-                process = subprocess.Popen(
-                    f"ffmpeg -hide_banner -loglevel panic -y -i {src_file_path} {dst_file_path}",
-                    shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                output, error = process.communicate()
-                process.wait()
-                if process.returncode != 0:
-                    print(f"Failed to convert {src_file_path} to {dst_file_path}: {process.returncode:d} {output} "
-                          f"{error}")
-            except Exception as e:
-                print(f"Failed to convert {src_file_path} to {dst_file_path}: {e}")
+    def update_progress_bar(*_):
+        progress_bar.update()
+
+    with multiprocessing.Pool(processes=os.cpu_count()) as pool:
+        for src_path in src_paths:
+            pool.apply_async(convert_audio, args=(src_path,), callback=update_progress_bar)
+        pool.join()
 
 
 if __name__ == '__main__':
