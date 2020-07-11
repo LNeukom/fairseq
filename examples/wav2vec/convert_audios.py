@@ -15,18 +15,17 @@ def get_parser():
     return parser
 
 
-def convert_audio(sr_path, dst_path):
+def convert_audio(src_path, dst_path):
     if not os.path.exists(dst_path):
         try:
-            process = subprocess.Popen(f"ffmpeg -hide_banner -loglevel panic -y -i {sr_path} {dst_path}",
+            process = subprocess.Popen(f"ffmpeg -hide_banner -loglevel panic -y -i {src_path} {dst_path}",
                                        shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             output, error = process.communicate()
             process.wait()
             if process.returncode != 0:
-                print(f"Failed to convert {sr_path} to {dst_path}: {process.returncode:d} {output} {error}")
+                print(f"Failed to convert {src_path} to {dst_path}: {process.returncode:d} {output} {error}")
         except Exception as e:
-            print(f"Failed to convert {sr_path} to {dst_path}: {e}")
-    return dst_path
+            print(f"Failed to convert {src_path} to {dst_path}: {e}")
 
 
 def main(args):
@@ -34,15 +33,19 @@ def main(args):
     search_path = os.path.join(dir_path, '**/*.' + args.src_ext)
     src_paths = glob.glob(search_path, recursive=True)
 
-    progress_bar = tqdm(total=100)
+    progress_bar = tqdm(total=len(src_paths))
 
     def update_progress_bar(*_):
         progress_bar.update()
 
     with multiprocessing.Pool(processes=os.cpu_count()) as pool:
+        results = []
         for src_path in src_paths:
-            pool.apply_async(convert_audio, args=(src_path,), callback=update_progress_bar)
-        pool.join()
+            src_path = os.path.realpath(src_path)
+            dst_path = os.path.realpath(src_path.replace(args.src_ext, args.dst_ext))
+            results.append(pool.apply_async(convert_audio, args=(src_path, dst_path), callback=update_progress_bar))
+        for result in results:
+            result.wait()
 
 
 if __name__ == '__main__':
