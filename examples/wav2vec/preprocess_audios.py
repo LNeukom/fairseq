@@ -120,6 +120,7 @@ def split_audio(src_path, dst_path):
     chunk_durations = []
     for i, raw_chunk in enumerate(vad_collector(sample_rate=audio_segment.frame_rate, frame_duration_ms=30,
                                                 padding_duration_ms=300, aggressiveness=3, audio=audio_segment.raw_data)):
+        # assure even chunk length (must be a multiple of (sample_width*channels), which is 2)
         if len(raw_chunk) & 1 != 0:
             raw_chunk = raw_chunk[:-1]
         chunk = AudioSegment(raw_chunk, frame_rate=audio_segment.frame_rate, sample_width=2, channels=1)
@@ -133,6 +134,7 @@ def convert_audio(src_path, dst_dir):
     src_basename_no_ext = os.path.basename(os.path.splitext(src_path)[0])
     # keep sub-folder structure to prevent filename conflicts:
     dst_path = os.path.join(dst_dir, src_dirname, f'{src_basename_no_ext}.flac')
+    os.makedirs(os.path.join(dst_dir, src_dirname), exist_ok=True)
     if not os.path.exists(dst_path):
         try:
             return split_audio(src_path, dst_path)
