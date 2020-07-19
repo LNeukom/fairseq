@@ -50,12 +50,12 @@ def main(args):
 
             file_info = soundfile.info(fname)
 
-            if file_path.duration < args.min_duration:
-                print(f"Ignore {fname}: duration {file_path.duration:.2f} < min_duration {args.min_duration:.2f}")
+            if file_info.duration < args.min_duration:
+                print(f"Ignore {fname}: duration {file_info.duration:.2f} < min_duration {args.min_duration:.2f}")
                 continue
 
-            if file_path.duration > args.max_duration:
-                print(f"Ignore {fname}: duration {file_path.duration:.2f} > max_duration {args.max_duration:.2f}")
+            if file_info.duration > args.max_duration:
+                print(f"Ignore {fname}: duration {file_info.duration:.2f} > max_duration {args.max_duration:.2f}")
                 continue
 
             dest = train_f if rand.random() > args.valid_percent else valid_f
