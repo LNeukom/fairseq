@@ -10,6 +10,7 @@ Helper script to pre-compute embeddings for a wav2letter++ dataset
 
 import argparse
 import glob
+import multiprocessing
 import os
 from shutil import copy
 
@@ -24,12 +25,25 @@ import tqdm
 from fairseq.models.wav2vec import Wav2VecModel
 
 
-def read_audio(fname):
+def read_audio(inputs):
     """ Load an audio file and return PCM along with the sample rate """
-    audio_segment = AudioSegment.from_file(fname, format=fname.replace('.', ''))
-    if audio_segment.frame_rate != 16000:
-        audio_segment = audio_segment.set_frame_rate(16000)
-    return audio_segment.raw_data, 16e3
+    fname, tgt_fname = inputs
+    try:
+        audio_segment = AudioSegment.from_file(fname)
+        if audio_segment.frame_rate != 16000:
+            audio_segment = audio_segment.set_frame_rate(16000)
+        samples = audio_segment.get_array_of_samples()
+        samples = np.array(samples)
+        print("Loaded:", samples.shape)
+    except Exception as e:
+        samples = None
+        print("Failed to read audio: ", fname)
+    return samples, 16e3, tgt_fname
+
+
+def write_feature_vec(fname, feat):
+    writer = H5Writer(fname)
+    writer.write(feat)
 
 
 class PretrainedWav2VecModel(nn.Module):
@@ -191,15 +205,20 @@ class EmbeddingDatasetWriter(object):
 
         paths = self.input_fnames
 
-        fnames_context = map(lambda x: os.path.join(self.output_path, x.replace("." + self.extension, ".h5context")), \
+        fnames_context = map(lambda x: os.path.join(self.output_path, x.replace("." + self.extension, ".h5context")),
                              map(os.path.basename, paths))
 
-        for name, target_fname in self._progress(zip(paths, fnames_context), total=len(self)):
-            wav, sr = read_audio(name)
-            z, c = self.model(wav)
-            feat = z if self.use_feat else c
-            writer = H5Writer(target_fname)
-            writer.write(feat)
+        with multiprocessing.Pool(processes=os.cpu_count()//4) as read_pool:
+            with multiprocessing.Pool(processes=os.cpu_count()//4) as write_pool:
+                results = []
+                for wav, sr, target_fname in tqdm.tqdm(
+                        read_pool.imap_unordered(read_audio, list(zip(paths, fnames_context))), total=len(self)):
+                    if wav is not None:
+                        z, c = self.model(wav)
+                        feat = z if self.use_feat else c
+                        results.append(write_pool.apply_async(write_feature_vec, args=(target_fname, feat)))
+                for result in results:
+                    result.wait()
 
     def __repr__(self):
 
