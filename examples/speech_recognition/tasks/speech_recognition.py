@@ -9,13 +9,15 @@ import re
 import sys
 
 import torch
+
+from examples.speech_recognition.data.w2v_asr_dataset import W2VAsrDataset
 from fairseq.data import Dictionary
 from fairseq.tasks import FairseqTask, register_task
 from examples.speech_recognition.data import AsrDataset
 from examples.speech_recognition.data.replabels import replabel_symbol
 
 
-def get_asr_dataset_from_json(data_json_path, tgt_dict):
+def get_asr_dataset_from_json(data_json_path, tgt_dict, wav2vec):
     """
     Parse data json and create dataset.
     See scripts/asr_prep_json.py which pack json from raw files
@@ -49,20 +51,25 @@ def get_asr_dataset_from_json(data_json_path, tgt_dict):
             key=lambda sample: int(sample[1]["input"]["length_ms"]),
             reverse=True,
         )
-        aud_paths = [s[1]["input"]["path"] for s in sorted_samples]
         ids = [s[0] for s in sorted_samples]
         speakers = []
         for s in sorted_samples:
             m = re.search("(.+?)-(.+?)-(.+?)", s[0])
             speakers.append(m.group(1) + "_" + m.group(2))
-        frame_sizes = [s[1]["input"]["length_ms"] for s in sorted_samples]
         tgt = [
             [int(i) for i in s[1]["output"]["tokenid"].split(", ")]
             for s in sorted_samples
         ]
         # append eos
         tgt = [[*t, tgt_dict.eos()] for t in tgt]
-        return AsrDataset(aud_paths, frame_sizes, tgt, tgt_dict, ids, speakers)
+        if wav2vec:
+            emb_paths = [s[1]["input"]["wav2vec_path"] for s in sorted_samples]
+            emb_num_tokens = [s[1]["input"]["wav2vec_num_tokens"] for s in sorted_samples]
+            return W2VAsrDataset(emb_paths, emb_num_tokens, tgt, tgt_dict, ids, speakers)
+        else:
+            aud_paths = [s[1]["input"]["path"] for s in sorted_samples]
+            frame_sizes = [s[1]["input"]["length_ms"] for s in sorted_samples]
+            return AsrDataset(aud_paths, frame_sizes, tgt, tgt_dict, ids, speakers)
 
 
 @register_task("speech_recognition")
@@ -82,10 +89,15 @@ class SpeechRecognitionTask(FairseqTask):
                             help='max number of frames in the source sequence')
         parser.add_argument('--max-target-positions', default=1024, type=int, metavar='N',
                             help='max number of tokens in the target sequence')
+        parser.add_argument('--wav2vec', default=False, type=bool, action="store_true",
+                            help='if true, wav2vec embeddings instead of audios are used as input '
+                                 '(the dataset must be preprocessed accordingly, e.g. see '
+                                 '`examples/speeech_recognition/datasets/prepare_swisstext.py`)')
 
     def __init__(self, args, tgt_dict):
         super().__init__(args)
         self.tgt_dict = tgt_dict
+        self.wav2vec = args.wav2vec
 
     @classmethod
     def setup_task(cls, args, **kwargs):
@@ -111,7 +123,7 @@ class SpeechRecognitionTask(FairseqTask):
             split (str): name of the split (e.g., train, valid, test)
         """
         data_json_path = os.path.join(self.args.data, "{}.json".format(split))
-        self.datasets[split] = get_asr_dataset_from_json(data_json_path, self.tgt_dict)
+        self.datasets[split] = get_asr_dataset_from_json(data_json_path, self.tgt_dict, self.wav2vec)
 
     def build_generator(self, models, args):
         w2l_decoder = getattr(args, "w2l_decoder", None)
