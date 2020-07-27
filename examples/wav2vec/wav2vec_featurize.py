@@ -17,6 +17,7 @@ import h5py
 import soundfile as sf
 import numpy as np
 import torch
+from pydub import AudioSegment
 from torch import nn
 import tqdm
 
@@ -25,11 +26,10 @@ from fairseq.models.wav2vec import Wav2VecModel
 
 def read_audio(fname):
     """ Load an audio file and return PCM along with the sample rate """
-
-    wav, sr = sf.read(fname)
-    assert sr == 16e3
-
-    return wav, 16e3
+    audio_segment = AudioSegment.from_file(fname, format=fname.replace('.', ''))
+    if audio_segment.frame_rate != 16000:
+        audio_segment = audio_segment.set_frame_rate(16000)
+    return audio_segment.raw_data, 16e3
 
 
 class PretrainedWav2VecModel(nn.Module):
