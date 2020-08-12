@@ -22,7 +22,7 @@ from pydub import AudioSegment
 from torch import nn
 import tqdm
 
-from fairseq.models.wav2vec import Wav2VecModel
+from fairseq.models.wav2vec.wav2vec import Wav2VecModel
 
 
 def read_audio(inputs):

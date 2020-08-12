@@ -138,7 +138,7 @@ class MultilingualTranslationTask(FairseqTask):
         for lang in sorted_langs:
             paths = utils.split_paths(args.data)
             assert len(paths) > 0
-            dicts[lang] = Dictionary.load(os.path.join(paths[0], 'dict.{}.txt'.format(lang)))
+            dicts[lang] = cls.load_dictionary(os.path.join(paths[0], 'dict.{}.txt'.format(lang)))
             if len(dicts) > 0:
                 assert dicts[lang].pad() == dicts[sorted_langs[0]].pad()
                 assert dicts[lang].eos() == dicts[sorted_langs[0]].eos()
@@ -314,12 +314,15 @@ class MultilingualTranslationTask(FairseqTask):
 
     def inference_step(self, generator, models, sample, prefix_tokens=None):
         with torch.no_grad():
+            if self.args.decoder_langtok:
+                bos_token = _lang_token_index(self.target_dictionary, self.args.target_lang)
+            else:
+                bos_token = self.target_dictionary.eos()
             return generator.generate(
-                    models,
-                    sample,
-                    prefix_tokens=prefix_tokens,
-                    bos_token=_lang_token_index(self.target_dictionary, self.args.target_lang)
-                    if self.args.decoder_langtok else self.target_dictionary.eos(),
+                models,
+                sample,
+                prefix_tokens=prefix_tokens,
+                bos_token=bos_token,
             )
 
     def reduce_metrics(self, logging_outputs, criterion):

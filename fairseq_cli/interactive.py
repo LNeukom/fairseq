@@ -14,10 +14,13 @@ import math
 import sys
 import os
 
+import numpy as np
+
 import torch
 
 from fairseq import checkpoint_utils, distributed_utils, options, tasks, utils
 from fairseq.data import encoders
+from .generate import get_symbols_to_strip_from_output
 
 
 logging.basicConfig(
@@ -83,6 +86,11 @@ def main(args):
 
     logger.info(args)
 
+    # Fix seed for stochastic decoding
+    if args.seed is not None and not args.no_seed_provided:
+        np.random.seed(args.seed)
+        utils.set_torch_seed(args.seed)
+
     use_cuda = torch.cuda.is_available() and not args.cpu
 
     # Setup task, e.g., translation
@@ -103,10 +111,7 @@ def main(args):
 
     # Optimize ensemble for generation
     for model in models:
-        model.make_generation_fast_(
-            beamable_mm_beam_size=None if args.no_beamable_mm else args.beam,
-            need_attn=args.print_alignment,
-        )
+        model.prepare_for_inference_(args)
         if args.fp16:
             model.half()
         if use_cuda:
@@ -182,6 +187,7 @@ def main(args):
                     align_dict=align_dict,
                     tgt_dict=tgt_dict,
                     remove_bpe=args.remove_bpe,
+                    extra_symbols_to_ignore=get_symbols_to_strip_from_output(generator),
                 )
                 detok_hypo_str = decode_fn(hypo_str)
                 score = hypo['score'] / math.log(2)  # convert to base 2

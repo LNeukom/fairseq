@@ -27,12 +27,12 @@ class SequenceGenerator(nn.Module):
         normalize_scores=True,
         len_penalty=1.0,
         unk_penalty=0.0,
-        retain_dropout=False,
         temperature=1.0,
         match_source_len=False,
         no_repeat_ngram_size=0,
         search_strategy=None,
         eos=None,
+        symbols_to_strip_from_output=None,
     ):
         """Generates translations of a given source sentence.
 
@@ -50,8 +50,6 @@ class SequenceGenerator(nn.Module):
                 shorter, >1.0 favors longer sentences (default: 1.0)
             unk_penalty (float, optional): unknown word penalty, where <0
                 produces more unks, >0 produces fewer (default: 0.0)
-            retain_dropout (bool, optional): use dropout when generating
-                (default: False)
             temperature (float, optional): temperature, where values
                 >1.0 produce more uniform samples and values <1.0 produce
                 sharper samples (default: 1.0)
@@ -66,6 +64,9 @@ class SequenceGenerator(nn.Module):
         self.pad = tgt_dict.pad()
         self.unk = tgt_dict.unk()
         self.eos = tgt_dict.eos() if eos is None else eos
+        self.symbols_to_strip_from_output = (
+            symbols_to_strip_from_output.union({self.eos})
+            if symbols_to_strip_from_output is not None else {self.eos})
         self.vocab_size = len(tgt_dict)
         self.beam_size = beam_size
         # the max beam size is the dictionary size - 1, since we never select pad
@@ -77,7 +78,6 @@ class SequenceGenerator(nn.Module):
         self.normalize_scores = normalize_scores
         self.len_penalty = len_penalty
         self.unk_penalty = unk_penalty
-        self.retain_dropout = retain_dropout
         self.temperature = temperature
         self.match_source_len = match_source_len
         self.no_repeat_ngram_size = no_repeat_ngram_size
@@ -90,8 +90,8 @@ class SequenceGenerator(nn.Module):
         # As a module attribute, setting it would break in multithread
         # settings when the model is shared.
         self.should_set_src_lengths = hasattr(self.search, 'needs_src_lengths') and self.search.needs_src_lengths
-        if not self.retain_dropout:
-            self.model.eval()
+
+        self.model.eval()
 
     def cuda(self):
         self.model.cuda()
@@ -176,11 +176,17 @@ class SequenceGenerator(nn.Module):
             ],
         )
         net_input = sample["net_input"]
-        src_tokens = net_input["src_tokens"]
-        # length of the source text being the character length except EndOfSentence and pad
-        src_lengths = (
-            (src_tokens.ne(self.eos) & src_tokens.ne(self.pad)).long().sum(dim=1)
-        )
+
+        if 'src_tokens' in net_input:
+            src_tokens = net_input['src_tokens']
+            # length of the source text being the character length except EndOfSentence and pad
+            src_lengths = (src_tokens.ne(self.eos) & src_tokens.ne(self.pad)).long().sum(dim=1)
+        elif 'source' in net_input:
+            src_tokens = net_input['source']
+            src_lengths = net_input['padding_mask'].size(-1) - net_input['padding_mask'].sum(-1) if net_input['padding_mask'] is not None else torch.tensor(src_tokens.size(-1))
+        else:
+            raise Exception('expected src_tokens or source in net input')
+
         # bsz: total number of sentences in beam
         input_size = src_tokens.size()
         bsz, src_len = input_size[0], input_size[1]
